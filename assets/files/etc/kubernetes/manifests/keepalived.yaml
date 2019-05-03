@@ -47,8 +47,10 @@ spec:
       #/bin/bash
       set -ex
 
+      echo $HOSTNAME
       source /etc/kubernetes/static-pod-resources/clusterrc
       CLUSTER_NAME="$NAME"
+      HOSTNAME=$(hostname)
       API_VIP="$(dig +noall +answer "api.${DOMAIN}" | awk '{print $NF}')"
       IFACE_CIDRS="$(ip addr show | grep -v "scope host" | grep -Po 'inet \K[\d.]+/[\d.]+' | xargs)"
       SUBNET_CIDR="$(/usr/local/bin/get_vip_subnet_cidr "$API_VIP" "$IFACE_CIDRS")"
@@ -56,6 +58,13 @@ spec:
       INTERFACE="$(ip -o addr show to "$SUBNET_CIDR" | awk '{print $2}')"
       DNS_VIP="$(dig +noall +answer "ns1.${DOMAIN}" | awk '{print $NF}')"
       INGRESS_VIP="$(dig +noall +answer "test.apps.${DOMAIN}" | awk '{print $NF}')"
+      PROVISIONING_SUBNET_CIDR="$(/usr/local/bin/get_vip_subnet_cidr "172.22.0.1" "$IFACE_CIDRS")"
+      PROVISIONING_NET_MASK="$(echo $PROVISIONING_SUBNET_CIDR | cut -d "/" -f 2)"
+      PROVISIONING_INTERFACE="$(ip -o addr show to "$PROVISIONING_SUBNET_CIDR" | awk '{print $2}')"
+      last_octet=$(echo $HOSTNAME | cut -f 2 -d '-')
+      # Don't want to use IP 0 or 1 (router)
+      last_octet=$(expr $last_octet + 2)
+      PROVISIONING_IP=$(echo $PROVISIONING_SUBNET_CIDR | sed "s/\.[0-9/]*\$/.${last_octet}/")
 
       # Virtual Router IDs. They must be different and 8 bit in length
       API_VRID=$(/usr/local/bin/fletcher8 "${CLUSTER_NAME}-api")
@@ -63,6 +72,7 @@ spec:
       INGRESS_VRID=$(/usr/local/bin/fletcher8 "${CLUSTER_NAME}-ingress")
 
       export DOMAIN
+      export HOSTNAME
       export CLUSTER_NAME
       export INTERFACE
       export API_VIP
@@ -72,6 +82,10 @@ spec:
       export DNS_VRID
       export INGRESS_VRID
       export NET_MASK
+      export PROVISIONING_INTERFACE
+      export PROVISIONING_NET_MASK
+      export PROVISIONING_IP
+
       /usr/libexec/platform-python -c "from __future__ import print_function
       import os
       with open('/etc/kubernetes/static-pod-resources/keepalived.conf.template', 'r') as f:
